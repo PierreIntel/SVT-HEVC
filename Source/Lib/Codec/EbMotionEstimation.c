@@ -5048,7 +5048,7 @@ EB_U8 GetNumOfIntraModesFromOisPoint(
 
 }
 
-EB_ERRORTYPE OpenLoopIntraSearchLcu(
+EB_ERRORTYPE OpenLoopIntraSearchLcu(   
 	PictureParentControlSet_t   *pictureControlSetPtr,
 	EB_U32                       lcuIndex,
 	MotionEstimationContext_t   *contextPtr,

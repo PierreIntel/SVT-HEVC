@@ -601,6 +601,7 @@ void* PictureDecisionKernel(void *inputPtr)
     // Debug
     EB_U64                           loopCount = 0;
 
+    EB_U32                           numSegments = 3;
     for(;;) {
 
         // Get Input Full Object
@@ -1293,7 +1294,7 @@ void* PictureDecisionKernel(void *inputPtr)
                         {
                             EB_U32 segmentIndex;
 
-                            for(segmentIndex=0; segmentIndex < pictureControlSetPtr->meSegmentsTotalCount; ++segmentIndex)
+                            for(segmentIndex=0; segmentIndex < pictureControlSetPtr->meSegmentsTotalCount - (numSegments - 1); segmentIndex += numSegments)
                             {
                                 // Get Empty Results Object
                                 EbGetEmptyObject(
@@ -1305,7 +1306,7 @@ void* PictureDecisionKernel(void *inputPtr)
 								outputResultsPtr->pictureControlSetWrapperPtr = encodeContextPtr->preAssignmentBuffer[pictureIndex];
 
                                 outputResultsPtr->segmentIndex = segmentIndex;
-
+                                
                                 // Post the Full Results Object
                                 EbPostFullObject(outputResultsWrapperPtr);
                             }

@@ -649,7 +649,7 @@ void* MotionEstimationKernel(void *inputPtr)
 
 	MdRateEstimationContext_t   *mdRateEstimationArray;
 
-
+    EB_U32 numSegments = 3;
 	for (;;) {
 
 
@@ -671,8 +671,14 @@ void* MotionEstimationKernel(void *inputPtr)
         SVT_LOG("POC %lld ME IN \n", pictureControlSetPtr->pictureNumber);
 #endif
 		// Segments
-		segmentIndex = inputResultsPtr->segmentIndex;
-		pictureWidthInLcu = (sequenceControlSetPtr->lumaWidth + sequenceControlSetPtr->lcuSize - 1) / sequenceControlSetPtr->lcuSize;
+
+        segmentIndex = inputResultsPtr->segmentIndex;
+        EB_U32 tmp = segmentIndex;
+        for(EB_U32 i = 0 ; i < numSegments ;i++){                
+        segmentIndex = tmp;
+        tmp++;
+		
+        pictureWidthInLcu = (sequenceControlSetPtr->lumaWidth + sequenceControlSetPtr->lcuSize - 1) / sequenceControlSetPtr->lcuSize;
 		pictureHeightInLcu = (sequenceControlSetPtr->lumaHeight + sequenceControlSetPtr->lcuSize - 1) / sequenceControlSetPtr->lcuSize;
 		SEGMENT_CONVERT_IDX_TO_XY(segmentIndex, xSegmentIndex, ySegmentIndex, pictureControlSetPtr->meSegmentsColumnCount);
 		xLcuStartIndex = SEGMENT_START_IDX(xSegmentIndex, pictureWidthInLcu, pictureControlSetPtr->meSegmentsColumnCount);
@@ -967,10 +973,13 @@ void* MotionEstimationKernel(void *inputPtr)
 		outputResultsPtr->segmentIndex = segmentIndex;
 
 		// Release the Input Results
-		EbReleaseObject(inputResultsWrapperPtr);
+        if(i== numSegments - 1){
+            EbReleaseObject(inputResultsWrapperPtr);
+        }
 
 		// Post the Full Results Object
 		EbPostFullObject(outputResultsWrapperPtr);
-	}
+        }tmp=0;
+    }
 	return EB_NULL;
 }
