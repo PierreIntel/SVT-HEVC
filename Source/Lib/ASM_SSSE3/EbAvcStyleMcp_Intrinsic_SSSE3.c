@@ -134,6 +134,64 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
         dstTemp = dst;
     */
 
+    
+    for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
+        if (puWidth & 64) { //64x
+            refPicTemp = refPic;
+            dstTemp = dst;
+            __m512i sum_lo_512, sum_hi_512, ref0_512, refs_512, ref2s_512, ref3s_512, sum_clip_U8_512, ref0_1_lo, ref2_3_lo, ref0_1_hi, ref2_3_hi;
+
+            ref0_512 = _mm512_loadu_si512((__m512i *)(refPicTemp));
+            refs_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + srcStride));
+            ref2s_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + 2 * srcStride));
+            ref3s_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + 3 * srcStride));
+
+            ref0_1_lo = _mm512_unpacklo_epi8(ref0_512, refs_512);
+            ref2_3_lo = _mm512_unpacklo_epi8(ref2s_512, ref3s_512);
+            ref0_1_hi = _mm512_unpackhi_epi8(ref0_512, refs_512);
+            ref2_3_hi = _mm512_unpackhi_epi8(ref2s_512, ref3s_512);
+
+            sum_lo_512 = _mm512_add_epi16(_mm512_maddubs_epi16(ref0_1_lo,IFCoeff_1_0_512),
+                                    _mm512_maddubs_epi16(ref2_3_lo, IFCoeff_3_2_512));
+
+            sum_hi_512 = _mm512_add_epi16(_mm512_maddubs_epi16(ref0_1_hi,IFCoeff_1_0_512),
+                                    _mm512_maddubs_epi16(ref2_3_hi, IFCoeff_3_2_512));
+
+            sum_lo_512 = _mm512_srai_epi16(_mm512_add_epi16(sum_lo_512, IFOffset_512), IFShift);
+            sum_hi_512 = _mm512_srai_epi16(_mm512_add_epi16(sum_hi_512, IFOffset_512), IFShift);
+            sum_clip_U8_512 = _mm512_packus_epi16(sum_lo_512, sum_hi_512);
+            _mm512_storeu_si512((__m512i *)(dstTemp), sum_clip_U8_512);
+
+            refPicTemp += 64;
+            dstTemp += 64;
+        }
+        if (puWidth & 16) { //16x
+            __m128i sum_lo, sum_hi, ref0, refs, ref2s, ref3s;   
+            ref0 = _mm_loadu_si128((__m128i *)(refPicTemp));
+            refs = _mm_loadu_si128((__m128i *)(refPicTemp + srcStride));
+            ref2s = _mm_loadu_si128((__m128i *)(refPicTemp + 2 * srcStride));
+            ref3s = _mm_loadu_si128((__m128i *)(refPicTemp + 3 * srcStride));
+
+            sum_lo = _mm_add_epi16(_mm_maddubs_epi16(_mm_unpacklo_epi8(ref0, refs), IFCoeff_1_0),
+                _mm_maddubs_epi16(_mm_unpacklo_epi8(ref2s, ref3s), IFCoeff_3_2));
+
+            sum_hi = _mm_add_epi16(_mm_maddubs_epi16(_mm_unpackhi_epi8(ref0, refs), IFCoeff_1_0),
+                _mm_maddubs_epi16(_mm_unpackhi_epi8(ref2s, ref3s), IFCoeff_3_2));
+
+            sum_lo = _mm_srai_epi16(_mm_add_epi16(sum_lo, IFOffset), IFShift);
+            sum_hi = _mm_srai_epi16(_mm_add_epi16(sum_hi, IFOffset), IFShift);
+            sum_clip_U8 = _mm_packus_epi16(sum_lo, sum_hi);
+            _mm_storeu_si128((__m128i *)(dstTemp), sum_clip_U8);
+
+            refPicTemp += 16;
+            dstTemp += 16;    
+        }
+        dst += dstStride;
+        refPic += srcStrideSkip;
+    }
+
+
+/*
         do{
             
             if (puWidth & 64) { //64x
@@ -206,11 +264,13 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
             } 
    
         }while(width_cnt > 0);
-
-        //dst += dstStride;
-        //refPic += srcStrideSkip;
-    //}
+*/
     
+//################
+
+
+    //}
+
     /*
     
     if (!(puWidth & 15)) { //16x
