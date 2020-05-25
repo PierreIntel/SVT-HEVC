@@ -9,6 +9,8 @@
 
 #include "emmintrin.h"
 #include "tmmintrin.h"
+#include "avx512bwintrin.h"
+#include "avx512fintrin.h"
 
 
 EB_EXTERN EB_ALIGN(16) const EB_S8 EbHevcAvcStyleLumaIFCoeff8_SSSE3[]= {
@@ -119,6 +121,73 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
     IFOffset = _mm_set1_epi16(0x0010);
     IFCoeff_1_0 = _mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_SSSE3 + fracPos - 32));
     IFCoeff_3_2 = _mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_SSSE3 + fracPos - 16));
+
+    __m512i IFCoeff_1_0_512 = _mm512_broadcast_i64x2(IFCoeff_1_0);
+    __m512i IFCoeff_3_2_512 = _mm512_broadcast_i64x2(IFCoeff_3_2);
+    __m512i IFOffset_512    = _mm512_set1_epi16(0x0010);
+    width_cnt = puWidth;
+
+    for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
+        do{
+            if (!(puWidth & 63)) { //64x
+                __m512i sum_lo, sum_hi, ref0, refs, ref2s, ref3s, sum_clip_U8_512_ ref0_1_lo, ref2_3_lo, ref0_1_hi, ref2_3_hi;
+
+                ref0 = _mm512_loadu_si512((__m512i *)(refPicTemp));
+                refs = _mm512_loadu_si512((__m512i *)(refPicTemp + srcStride));
+                ref2s = _mm512_loadu_si512((__m512i *)(refPicTemp + 2 * srcStride));
+                ref3s = _mm512_loadu_si512((__m512i *)(refPicTemp + 3 * srcStride));
+
+                ref0_1_lo = _mm512_unpacklo_epi8(ref0, refs);
+                ref2_3_lo = _mm512_unpacklo_epi8(ref2s, ref3s);
+                ref0_1_hi = _mm512_unpackhi_epi8(ref0, refs);
+                ref2_3_hi = _mm512_unpackhi_epi8(ref2s, ref3s);
+
+                sum_lo = _mm512_add_epi16(_mm512_maddubs_epi16(ref0_1_lo,IFCoeff_1_0_512),
+                                        _mm512_maddubs_epi16(ref2_3_lo, IFCoeff_3_2_512));
+
+                sum_hi = _mm512_add_epi16(_mm512_maddubs_epi16(ref0_1_hi,IFCoeff_1_0_512),
+                                        _mm512_maddubs_epi16(ref2_3_hi, IFCoeff_3_2_512));
+
+                sum_lo = _mm512_srai_epi16(_mm512_add_epi16(sum_lo, IFOffset_512), IFShift);
+                sum_hi = _mm512_srai_epi16(_mm512_add_epi16(sum_hi, IFOffset_512), IFShift);
+                sum_clip_U8_512 = _mm512_packus_epi16(sum_lo, sum_hi);
+                _mm512_storeu_si512((__m128i *)(dstTemp), sum_clip_U8_512);
+
+                width_cnt -= 64;
+                dstTemp += 64;
+                refPicTemp += 64;
+            }
+
+            if (!(puWidth & 15)) { //16x
+                ref0 = _mm_loadu_si128((__m128i *)(refPicTemp));
+                refs = _mm_loadu_si128((__m128i *)(refPicTemp + srcStride));
+                ref2s = _mm_loadu_si128((__m128i *)(refPicTemp + 2 * srcStride));
+                ref3s = _mm_loadu_si128((__m128i *)(refPicTemp + 3 * srcStride));
+
+                sum_lo = _mm_add_epi16(_mm_maddubs_epi16(_mm_unpacklo_epi8(ref0, refs), IFCoeff_1_0),
+                    _mm_maddubs_epi16(_mm_unpacklo_epi8(ref2s, ref3s), IFCoeff_3_2));
+
+                sum_hi = _mm_add_epi16(_mm_maddubs_epi16(_mm_unpackhi_epi8(ref0, refs), IFCoeff_1_0),
+                    _mm_maddubs_epi16(_mm_unpackhi_epi8(ref2s, ref3s), IFCoeff_3_2));
+
+                sum_lo = _mm_srai_epi16(_mm_add_epi16(sum_lo, IFOffset), IFShift);
+                sum_hi = _mm_srai_epi16(_mm_add_epi16(sum_hi, IFOffset), IFShift);
+                sum_clip_U8 = _mm_packus_epi16(sum_lo, sum_hi);
+                _mm_storeu_si128((__m128i *)(dstTemp), sum_clip_U8);
+
+                width_cnt -= 16;
+                dstTemp += 16;
+                refPicTemp += 16;
+
+            }    
+        }while(width_cnt > 0);
+
+        dstTemp += dstStride;
+        refPicTemp += srcStrideSkip;
+    }
+    
+    /*
+    
     if (!(puWidth & 15)) { //16x
 
         __m128i sum_lo, sum_hi, ref0, refs, ref2s, ref3s;
@@ -177,4 +246,5 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
             dst += 8;
         }
     }
+    */
 }
