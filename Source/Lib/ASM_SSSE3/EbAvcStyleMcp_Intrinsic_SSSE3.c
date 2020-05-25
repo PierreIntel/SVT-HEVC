@@ -122,8 +122,8 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
     IFCoeff_1_0 = _mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_SSSE3 + fracPos - 32));
     IFCoeff_3_2 = _mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_SSSE3 + fracPos - 16));
 
-    __m512i IFCoeff_1_0_512 = _mm512_broadcast_i64x2(IFCoeff_1_0);
-    __m512i IFCoeff_3_2_512 = _mm512_broadcast_i64x2(IFCoeff_3_2);
+    __m512i IFCoeff_1_0_512 = _mm512_broadcast_i32x4(IFCoeff_1_0);
+    __m512i IFCoeff_3_2_512 = _mm512_broadcast_i32x4(IFCoeff_3_2);
     __m512i IFOffset_512    = _mm512_set1_epi16(0x0010);
     width_cnt = puWidth;
 
@@ -151,7 +151,7 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
                 sum_lo_512 = _mm512_srai_epi16(_mm512_add_epi16(sum_lo_512, IFOffset_512), IFShift);
                 sum_hi_512 = _mm512_srai_epi16(_mm512_add_epi16(sum_hi_512, IFOffset_512), IFShift);
                 sum_clip_U8_512 = _mm512_packus_epi16(sum_lo_512, sum_hi_512);
-                _mm512_storeu_si512((__m128i *)(dstTemp), sum_clip_U8_512);
+                _mm512_storeu_si512((__m512i *)(dstTemp), sum_clip_U8_512);
 
                 width_cnt -= 64;
                 dstTemp += 64;
