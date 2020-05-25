@@ -130,7 +130,7 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
     for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
         do{
             if (!(puWidth & 63)) { //64x
-                __m512i sum_lo, sum_hi, ref0, refs, ref2s, ref3s, sum_clip_U8_512_ ref0_1_lo, ref2_3_lo, ref0_1_hi, ref2_3_hi;
+                __m512i sum_lo, sum_hi, ref0, refs, ref2s, ref3s, sum_clip_U8_512, ref0_1_lo, ref2_3_lo, ref0_1_hi, ref2_3_hi;
 
                 ref0 = _mm512_loadu_si512((__m512i *)(refPicTemp));
                 refs = _mm512_loadu_si512((__m512i *)(refPicTemp + srcStride));
