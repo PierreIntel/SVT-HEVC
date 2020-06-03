@@ -1099,6 +1099,8 @@ void ChromaInterpolationFilterOneDOutRawHorizontal_SSSE3(
   refPic--;
   PrefetchBlock(refPic, srcStride, puWidth+8, puHeight);
 
+  //printf("srcStride %d, puW %d puH %d, fracPosx %d fracposy %d\n", srcStride, puWidth, puHeight, fracPosx, fracPosy);
+  
   c0 = _mm_loadl_epi64((__m128i *)EbHevcChromaFilterCoeff[fracPosx]);
   c0 = _mm_packs_epi16(c0, c0);
   c0 = _mm_unpacklo_epi16(c0, c0);
