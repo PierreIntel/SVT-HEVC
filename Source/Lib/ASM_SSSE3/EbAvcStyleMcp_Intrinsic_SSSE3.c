@@ -127,24 +127,27 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
     fracPos <<= 5;
     refPic -= srcStride;
     IFOffset = _mm_set1_epi16(0x0010);
+    __m256i IFOffset_256 = _mm256_broadcast_i32x4(IFOffset);//_mm256_set1_epi16(0x0010);
+    __m512i IFOffset_512 = _mm512_broadcast_i32x4(IFOffset);
 
-    __m512i IFCoeff_1_0_vnni = _mm512_broadcast_i32x4(_mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_VNNI + fracPos - 32)));
-    __m512i IFCoeff_3_2_vnni = _mm512_broadcast_i32x4(_mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_VNNI + fracPos - 16)));
+    IFCoeff_1_0 = _mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_SSSE3 + fracPos - 32));
+    IFCoeff_3_2 = _mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_SSSE3 + fracPos - 16));
     
-    __m512i IFOffset_512    = _mm512_set1_epi16(0x0010);
+    __m512i IFCoeff_1_0_vnni = _mm512_broadcast_i32x4(_mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_VNNI + fracPos - 32)));
+    //__m512i IFCoeff_3_2_vnni = _mm512_broadcast_i32x4(_mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_VNNI + fracPos - 16)));
+    
     width_cnt = puWidth;
     
     __m512i zero = _mm512_set1_epi32(0);
-    
+    __m512i sum_lo_0, sum_lo_1, sum_hi_0, sum_hi_1, ref0_512, refs_512, ref2s_512, ref3s_512, ref0_1_lo, ref2_3_lo, ref0_1_hi, ref2_3_hi, sum_clip_U8_512;
+    __m256i sum_clip_U8_256;
+
     for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
         width_cnt = puWidth;
+        refPicTemp = refPic;
+        dstTemp = dst;
         while(width_cnt > 0){
             if (width_cnt & 64) { //64x
-                refPicTemp = refPic;
-                dstTemp = dst;
-                __m512i sum_lo_0,sum_lo_1,sum_hi_0,sum_hi_1, sum_hi_512, sum_lo_512, ref0_512, refs_512, ref2s_512, ref3s_512, sum_clip_U8_512, ref0_1_lo, ref2_3_lo, ref0_1_hi, ref2_3_hi;
-                __m512i ref0_1_2_3_lo_0, ref0_1_2_3_lo_1, ref0_1_2_3_hi_0, ref0_1_2_3_hi_1;//, sum_lo_0, sum_lo_1, sum_hi_0, sum_hi_1;
-
                 ref0_512 = _mm512_loadu_si512((__m512i *)(refPicTemp));
                 refs_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + srcStride));
                 ref2s_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + 2 * srcStride));
@@ -159,14 +162,6 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
                 ref2_3_lo = _mm512_unpacklo_epi8(ref2s_512, ref3s_512);
                 ref0_1_hi = _mm512_unpackhi_epi8(ref0_512, refs_512);
                 ref2_3_hi = _mm512_unpackhi_epi8(ref2s_512, ref3s_512);
-                
-                // [lo_0, lo_1, hi_0, hi_1] 
-                /*
-                ref0_1_2_3_lo_0 = _mm512_unpacklo_epi16(ref0_1_lo, ref2_3_lo);
-                ref0_1_2_3_lo_1 = _mm512_unpackhi_epi16(ref0_1_lo, ref2_3_lo);
-                ref0_1_2_3_hi_0 = _mm512_unpacklo_epi16(ref0_1_hi, ref2_3_hi);
-                ref0_1_2_3_hi_1 = _mm512_unpackhi_epi16(ref0_1_hi, ref2_3_hi);
-                */
 
                 sum_lo_0 =  _mm512_dpbusd_epi32(zero, _mm512_unpacklo_epi16(ref0_1_lo, ref2_3_lo), IFCoeff_1_0_vnni); // 64[0]
                 sum_lo_1 =  _mm512_dpbusd_epi32(zero, _mm512_unpackhi_epi16(ref0_1_lo, ref2_3_lo), IFCoeff_1_0_vnni); // 64[1]
@@ -183,28 +178,55 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
                 
                 sum_clip_U8_512 = _mm512_castsi256_si512(_mm512_cvtusepi16_epi8(sum_lo_0));
                 sum_clip_U8_512 = _mm512_inserti64x4(sum_clip_U8_512, _mm512_cvtusepi16_epi8(sum_hi_0), 1);
-                __m512i sum_vnni = sum_clip_U8_512;
+                _mm512_storeu_si512((__m512i *)(dstTemp), sum_clip_U8_512);
 
                 refPicTemp += 64;
                 dstTemp += 64;
                 width_cnt -= 64;
             }
-            if (width_cnt & 16) { //16x
-                __m128i sum_lo, sum_hi, ref0, refs, ref2s, ref3s;   
-                ref0 = _mm_loadu_si128((__m128i *)(refPicTemp));
-                refs = _mm_loadu_si128((__m128i *)(refPicTemp + srcStride));
-                ref2s = _mm_loadu_si128((__m128i *)(refPicTemp + 2 * srcStride));
-                ref3s = _mm_loadu_si128((__m128i *)(refPicTemp + 3 * srcStride));
+            if (width_cnt & 32) {
+                ref0_512 = _mm512_castsi256_si512(_mm256_loadu_si256((__m256i *)(refPicTemp)));
+                refs_512 = _mm512_castsi256_si512(_mm256_loadu_si256((__m256i *)(refPicTemp + srcStride)));
+                ref0_512 = _mm512_inserti64x4(ref0_512,_mm256_loadu_si256((__m256i *)(refPicTemp + 2 * srcStride)),1);
+                refs_512 = _mm512_inserti64x4(ref0_512,_mm256_loadu_si256((__m256i *)(refPicTemp + 3 * srcStride)),1);
 
-                sum_lo = _mm_add_epi16(_mm_maddubs_epi16(_mm_unpacklo_epi8(ref0, refs), IFCoeff_1_0),
-                    _mm_maddubs_epi16(_mm_unpacklo_epi8(ref2s, ref3s), IFCoeff_3_2));
+                ref0_512 = _mm512_permutexvar_epi32(_mm512_set_epi32(15,11,7,3,14,10,6,2,13,9,5,1,12,8,4,0),ref0_512);
+                refs_512 = _mm512_permutexvar_epi32(_mm512_set_epi32(15,11,7,3,14,10,6,2,13,9,5,1,12,8,4,0),refs_512);
 
-                sum_hi = _mm_add_epi16(_mm_maddubs_epi16(_mm_unpackhi_epi8(ref0, refs), IFCoeff_1_0),
-                    _mm_maddubs_epi16(_mm_unpackhi_epi8(ref2s, ref3s), IFCoeff_3_2));
+                ref0_1_lo = _mm512_unpacklo_epi8(ref0_512, refs_512);
+                ref2_3_hi = _mm512_unpackhi_epi8(ref0_512, refs_512);
 
-                sum_lo = _mm_srai_epi16(_mm_add_epi16(sum_lo, IFOffset), IFShift);
-                sum_hi = _mm_srai_epi16(_mm_add_epi16(sum_hi, IFOffset), IFShift);
-                sum_clip_U8 = _mm_packus_epi16(sum_lo, sum_hi);
+                sum_lo_0 =  _mm512_dpbusd_epi32(zero, _mm512_unpacklo_epi16(ref0_1_lo, ref2_3_hi), IFCoeff_1_0_vnni);
+                sum_hi_0 =  _mm512_dpbusd_epi32(zero, _mm512_unpacklo_epi16(ref0_1_lo, ref2_3_hi), IFCoeff_1_0_vnni);
+
+                sum_lo_0 = _mm512_castsi256_si512(_mm512_cvtusepi32_epi16(sum_lo_0));
+                sum_lo_0 = _mm512_inserti64x4(sum_lo_0, _mm512_cvtusepi32_epi16(sum_hi_0), 1);
+                sum_lo_0 = _mm512_srai_epi16(_mm512_add_epi16(sum_lo_0, IFOffset_512), IFShift);
+                
+                sum_clip_U8_256 = _mm512_cvtusepi16_epi8(sum_lo_0);
+
+                _mm256_storeu_si256((__m256i *)(dstTemp), sum_clip_U8_256);
+                refPicTemp += 32;
+                dstTemp += 32;
+                width_cnt -= 32;
+            }    
+            if (width_cnt & 16) { //16x  
+                ref0_512 = _mm512_castsi128_si512(_mm_loadu_si128((__m128i *)(refPicTemp)));
+                refs_512 = _mm512_castsi128_si512(_mm_loadu_si128((__m128i *)(refPicTemp) + srcStride));
+                ref0_512 = _mm512_inserti64x2(ref0_512,_mm_loadu_si128((__m128i *)(refPicTemp + 2 * srcStride)),2);
+                refs_512 = _mm512_inserti64x2(refs_512,_mm_loadu_si128((__m128i *)(refPicTemp + 3 * srcStride)),2);
+
+                ref0_512 = _mm512_permutexvar_epi32(_mm512_set_epi32(15,11,7,3,14,10,6,2,13,9,5,1,12,8,4,0),ref0_512);
+                refs_512 = _mm512_permutexvar_epi32(_mm512_set_epi32(15,11,7,3,14,10,6,2,13,9,5,1,12,8,4,0),refs_512);
+
+                ref0_1_lo = _mm512_unpacklo_epi8(ref0_512, refs_512);
+                ref2_3_hi = _mm512_unpackhi_epi8(ref0_512, refs_512);
+
+                sum_lo_0 =  _mm512_dpbusd_epi32(zero, _mm512_unpacklo_epi16(ref0_1_lo, ref2_3_hi), IFCoeff_1_0_vnni);
+                sum_clip_U8_256 = _mm512_cvtusepi32_epi16(sum_lo_0);
+                sum_clip_U8_256 = _mm256_srai_epi16(_mm256_add_epi16(sum_clip_U8_256, IFOffset_256), IFShift);
+
+                sum_clip_U8 = _mm256_cvtusepi16_epi8(sum_clip_U8_256);
                 _mm_storeu_si128((__m128i *)(dstTemp), sum_clip_U8);
 
                 refPicTemp += 16;
@@ -228,150 +250,7 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
                 width_cnt -= 8; 
             }
         }
-            dst += dstStride;
-            refPic += srcStrideSkip;
+        dst += dstStride;
+        refPic += srcStrideSkip;
     }
-
-
-/*
-        do{
-            
-            if (puWidth & 64) { //64x
-                refPicTemp = refPic;
-                dstTemp = dst;
-                for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {   
-                    __m512i sum_lo_512, sum_hi_512, ref0_512, refs_512, ref2s_512, ref3s_512, sum_clip_U8_512, ref0_1_lo, ref2_3_lo, ref0_1_hi, ref2_3_hi;
-                    
-                    ref0_512 = _mm512_loadu_si512((__m512i *)(refPicTemp));
-                    refs_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + srcStride));
-                    ref2s_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + 2 * srcStride));
-                    ref3s_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + 3 * srcStride));
-
-                    ref0_1_lo = _mm512_unpacklo_epi8(ref0_512, refs_512);
-                    ref2_3_lo = _mm512_unpacklo_epi8(ref2s_512, ref3s_512);
-                    ref0_1_hi = _mm512_unpackhi_epi8(ref0_512, refs_512);
-                    ref2_3_hi = _mm512_unpackhi_epi8(ref2s_512, ref3s_512);
-
-                    sum_lo_512 = _mm512_add_epi16(_mm512_maddubs_epi16(ref0_1_lo,IFCoeff_1_0_512),
-                                            _mm512_maddubs_epi16(ref2_3_lo, IFCoeff_3_2_512));
-
-                    sum_hi_512 = _mm512_add_epi16(_mm512_maddubs_epi16(ref0_1_hi,IFCoeff_1_0_512),
-                                            _mm512_maddubs_epi16(ref2_3_hi, IFCoeff_3_2_512));
-
-                    sum_lo_512 = _mm512_srai_epi16(_mm512_add_epi16(sum_lo_512, IFOffset_512), IFShift);
-                    sum_hi_512 = _mm512_srai_epi16(_mm512_add_epi16(sum_hi_512, IFOffset_512), IFShift);
-                    sum_clip_U8_512 = _mm512_packus_epi16(sum_lo_512, sum_hi_512);
-                    _mm512_storeu_si512((__m512i *)(dstTemp), sum_clip_U8_512);
-
-                    dstTemp += dstStride;
-                    refPicTemp += srcStrideSkip;
-
-                    //width_cnt -= 64;
-                    //dstTemp += 64;
-                    //refPicTemp += 64;
-                }
-                width_cnt -= 64;
-                refPic += 64;
-                dst += 64;
-            }
-            if (puWidth & 16) { //16x
-                refPicTemp = refPic;
-                dstTemp = dst;
-                for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
-                    __m128i sum_lo, sum_hi, ref0, refs, ref2s, ref3s;   
-                    ref0 = _mm_loadu_si128((__m128i *)(refPicTemp));
-                    refs = _mm_loadu_si128((__m128i *)(refPicTemp + srcStride));
-                    ref2s = _mm_loadu_si128((__m128i *)(refPicTemp + 2 * srcStride));
-                    ref3s = _mm_loadu_si128((__m128i *)(refPicTemp + 3 * srcStride));
-
-                    sum_lo = _mm_add_epi16(_mm_maddubs_epi16(_mm_unpacklo_epi8(ref0, refs), IFCoeff_1_0),
-                        _mm_maddubs_epi16(_mm_unpacklo_epi8(ref2s, ref3s), IFCoeff_3_2));
-
-                    sum_hi = _mm_add_epi16(_mm_maddubs_epi16(_mm_unpackhi_epi8(ref0, refs), IFCoeff_1_0),
-                        _mm_maddubs_epi16(_mm_unpackhi_epi8(ref2s, ref3s), IFCoeff_3_2));
-
-                    sum_lo = _mm_srai_epi16(_mm_add_epi16(sum_lo, IFOffset), IFShift);
-                    sum_hi = _mm_srai_epi16(_mm_add_epi16(sum_hi, IFOffset), IFShift);
-                    sum_clip_U8 = _mm_packus_epi16(sum_lo, sum_hi);
-                    _mm_storeu_si128((__m128i *)(dstTemp), sum_clip_U8);
-
-                    dstTemp += dstStride;
-                    refPicTemp += srcStrideSkip;
-
-                    //width_cnt -= 16;
-                    //dstTemp += 16;
-                    //refPicTemp += 16;
-                }
-                width_cnt -= 16;
-            } 
-   
-        }while(width_cnt > 0);
-*/
-    
-//################
-
-
-    //}
-
-    /*
-    
-    if (!(puWidth & 15)) { //16x
-
-        __m128i sum_lo, sum_hi, ref0, refs, ref2s, ref3s;
-
-        for (width_cnt = 0; width_cnt < puWidth; width_cnt += 16) {
-
-            refPicTemp = refPic;
-            dstTemp = dst;
-
-            for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
-                ref0 = _mm_loadu_si128((__m128i *)(refPicTemp));
-                refs = _mm_loadu_si128((__m128i *)(refPicTemp + srcStride));
-                ref2s = _mm_loadu_si128((__m128i *)(refPicTemp + 2 * srcStride));
-                ref3s = _mm_loadu_si128((__m128i *)(refPicTemp + 3 * srcStride));
-
-                sum_lo = _mm_add_epi16(_mm_maddubs_epi16(_mm_unpacklo_epi8(ref0, refs), IFCoeff_1_0),
-                    _mm_maddubs_epi16(_mm_unpacklo_epi8(ref2s, ref3s), IFCoeff_3_2));
-
-                sum_hi = _mm_add_epi16(_mm_maddubs_epi16(_mm_unpackhi_epi8(ref0, refs), IFCoeff_1_0),
-                    _mm_maddubs_epi16(_mm_unpackhi_epi8(ref2s, ref3s), IFCoeff_3_2));
-
-                sum_lo = _mm_srai_epi16(_mm_add_epi16(sum_lo, IFOffset), IFShift);
-                sum_hi = _mm_srai_epi16(_mm_add_epi16(sum_hi, IFOffset), IFShift);
-                sum_clip_U8 = _mm_packus_epi16(sum_lo, sum_hi);
-                _mm_storeu_si128((__m128i *)(dstTemp), sum_clip_U8);
-                dstTemp += dstStride;
-                refPicTemp += srcStrideSkip;
-            }
-            refPic += 16;
-            dst += 16;
-        }
-    }
-    else { //8x
-        __m128i sum, sum01, sum23;
-
-        for (width_cnt = 0; width_cnt < puWidth; width_cnt += 8) {
-
-            refPicTemp = refPic;
-            dstTemp = dst;
-
-            for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
-                sum01 = _mm_maddubs_epi16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i *)(refPicTemp)),
-                                                            _mm_loadl_epi64((__m128i *)(refPicTemp + srcStride))), IFCoeff_1_0);
-
-                sum23 = _mm_maddubs_epi16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i *)(refPicTemp + 2 * srcStride)),
-                                                            _mm_loadl_epi64((__m128i *)(refPicTemp + 3 * srcStride))), IFCoeff_3_2);
-
-                sum = _mm_srai_epi16(_mm_add_epi16(_mm_add_epi16(sum01, sum23), IFOffset), IFShift);
-                sum_clip_U8 = _mm_packus_epi16(sum, sum);
-                _mm_storel_epi64((__m128i *)(dstTemp), sum_clip_U8);
-
-                dstTemp += dstStride;
-                refPicTemp += srcStrideSkip;
-            }
-            refPic += 8;
-            dst += 8;
-        }
-    }
-    */
 }

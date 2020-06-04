@@ -20,7 +20,8 @@ set(flags_to_test
     -static-intel
     -mavx512bw
     -mavx512vnni
-    -mavx512vl   
+    -mavx512vl
+    -mavx512dq   
     -static-intel )
 
 foreach(cflag ${flags_to_test})
