@@ -1103,9 +1103,15 @@ void ChromaInterpolationFilterOneDOutRawHorizontal_SSSE3(
   
   c0 = _mm_loadl_epi64((__m128i *)EbHevcChromaFilterCoeff[fracPosx]);
   c0 = _mm_packs_epi16(c0, c0);
+
+  __m128i v3 = (__m128i)_mm_shuffle_epi32(c0,0); //For VNNI
+
   c0 = _mm_unpacklo_epi16(c0, c0);
   c2 = _mm_shuffle_epi32(c0, 0x55);
   c0 = _mm_shuffle_epi32(c0, 0x00);
+
+  __m128i v0, v2, s0, s2;
+  __m128i zero = _mm_set1_epi32(0);
 
   if (puWidth & 2)
   {
@@ -1119,6 +1125,16 @@ void ChromaInterpolationFilterOneDOutRawHorizontal_SSSE3(
       a2 = _mm_loadl_epi64((__m128i *)ptr); ptr += srcStride;
       a3 = _mm_loadl_epi64((__m128i *)ptr); ptr += srcStride;
 
+      //VNNI
+      v0 = _mm_insert_epi64(a0, (long long)a1[0], 1);
+      v2 = _mm_insert_epi64(a1, (long long)a3[0], 1);
+      v0 = _mm_shuffle_epi8(v0, _mm_set_epi8(12,11,10,9,11,10,9,8,4,3,2,1,3,2,1,0));
+      v2 = _mm_shuffle_epi8(v2, _mm_set_epi8(12,11,10,9,11,10,9,8,4,3,2,1,3,2,1,0));
+      s0 = _mm_dpbusd_epi32(zero, v0, v3);
+      s2 = _mm_dpbusd_epi32(zero, v2, v3);
+      s0 = _mm_packs_epi32(s0,s2);
+
+      //SSSE3
       a0 = _mm_unpacklo_epi8(a0, a1); // 10 samples
       a2 = _mm_unpacklo_epi8(a2, a3); // 10 samples
       b0 = _mm_unpacklo_epi16(a0, a2);
@@ -1126,6 +1142,12 @@ void ChromaInterpolationFilterOneDOutRawHorizontal_SSSE3(
       sum = _mm_maddubs_epi16(_mm_shuffle_epi8(b0, _mm_setr_epi8(0, 4, 4, 8, 1, 5, 5, 9, 2, 6, 6, 10, 3, 7, 7, 11)), c0);
       b0 = _mm_unpacklo_epi16(_mm_srli_si128(a0, 4), _mm_srli_si128(a2, 4));
       sum = _mm_add_epi16(sum ,_mm_maddubs_epi16(_mm_shuffle_epi8(b0, _mm_setr_epi8(0, 4, 4, 8, 1, 5, 5, 9, 2, 6, 6, 10, 3, 7, 7, 11)), c2));
+
+      //COMPAR
+      if(_mm_cmpneq_epi16_mask(s0,sum)){
+        printf("error 2\n");
+        while(1);
+      }
 
       _mm_storeu_si128((__m128i *)dst, sum);
       dst += 8;
@@ -1154,11 +1176,25 @@ void ChromaInterpolationFilterOneDOutRawHorizontal_SSSE3(
       a0 = _mm_loadl_epi64((__m128i *)ptr); ptr += srcStride;
       a1 = _mm_loadl_epi64((__m128i *)ptr); ptr += srcStride;
 
+      //VNNI
+      v0 = _mm_shuffle_epi8(a0 , _mm_setr_epi8(0,1,2,3,1,2,3,4,2,3,4,5,3,4,5,6));
+      v2 = _mm_shuffle_epi8(a1 , _mm_setr_epi8(0,1,2,3,1,2,3,4,2,3,4,5,3,4,5,6));
+      s0 = _mm_dpbusd_epi32(zero, v0, v3);
+      s2 = _mm_dpbusd_epi32(zero, v2, v3);
+      s0 = _mm_packs_epi32(s0,s2);
+
+      //SSSE3
       a0 = _mm_unpacklo_epi64(a0, a1);
       b0 = _mm_shuffle_epi8(a0, _mm_setr_epi8(0, 1, 1, 2, 2, 3, 3, 4, 8, 9, 9, 10, 10, 11, 11, 12));
       b1 = _mm_shuffle_epi8(a0, _mm_setr_epi8(2, 3, 3, 4, 4, 5, 5, 6, 10, 11, 11, 12, 12, 13, 13, 14));
       sum = _mm_maddubs_epi16(b0, c0);
       sum = _mm_add_epi16(sum, _mm_maddubs_epi16(b1, c2));
+
+      //COMPAR
+      if(_mm_cmpneq_epi16_mask(s0,sum)){
+        printf("error 4\n");
+        while(1);
+      }
 
       _mm_storeu_si128((__m128i *)dst, sum);
       dst += 8;
@@ -1187,15 +1223,33 @@ void ChromaInterpolationFilterOneDOutRawHorizontal_SSSE3(
 
       // Need 11 samples, load 16
       a0 = _mm_loadu_si128((__m128i *)ptr); ptr += srcStride;
+
+      //VNNI
+      v0 = _mm_shuffle_epi8(a0 , _mm_setr_epi8(0,1,2,3,1,2,3,4,2,3,4,5,3,4,5,6));
+      v2 = _mm_shuffle_epi8(a0 , _mm_setr_epi8(4,5,6,7, 5,6,7,8, 6,7,8,9, 7,8,9,10));
+      s0 = _mm_dpbusd_epi32(zero, v0, v3);
+      s2 = _mm_dpbusd_epi32(zero, v2, v3);
+      s0 = _mm_packs_epi32(s0,s2);
+
+      //SSSE3
       a2 = _mm_shuffle_epi8(a0, _mm_setr_epi8(2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10));
       a0 = _mm_shuffle_epi8(a0, _mm_setr_epi8(0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8));
       sum = _mm_maddubs_epi16(a0, c0);
       sum = _mm_add_epi16(sum, _mm_maddubs_epi16(a2, c2));
+
+      //COMPAR
+      if(_mm_cmpneq_epi16_mask(s0,sum)){
+        printf("error 8 row %d col %d\n",rowCount, colCount);
+        printf("H %d |sum = %llx %llx | dst %llx %x | VNNI %llx %llx\n",puHeight, sum[1], sum[0], dst[1], dst[0], s0[1], s0[0]);
+        while(1);
+        return;
+      }
       _mm_storeu_si128((__m128i *)dst, sum);
+
+      
       dst += 8;
     }
     while (--rowCount > 0);
-
     colCount -= 8;
     refPic += 8;
   }
