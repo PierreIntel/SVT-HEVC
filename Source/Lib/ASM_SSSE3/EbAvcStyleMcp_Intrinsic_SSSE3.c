@@ -10,6 +10,7 @@
 #include "emmintrin.h"
 #include "tmmintrin.h"
 
+//#define VNNI_SUPPORT
 
 EB_EXTERN EB_ALIGN(16) const EB_S8 EbHevcAvcStyleLumaIFCoeff8_SSSE3[]= {
     -1, 25, -1, 25, -1, 25, -1, 25, -1, 25, -1, 25, -1, 25, -1, 25,
@@ -18,6 +19,15 @@ EB_EXTERN EB_ALIGN(16) const EB_S8 EbHevcAvcStyleLumaIFCoeff8_SSSE3[]= {
     18, -2, 18, -2, 18, -2, 18, -2, 18, -2, 18, -2, 18, -2, 18, -2,
     -1,  9, -1,  9, -1,  9, -1,  9, -1,  9, -1,  9, -1,  9, -1,  9,
     25, -1, 25, -1, 25, -1, 25, -1, 25, -1, 25, -1, 25, -1, 25, -1
+};
+
+const __uint8_t EbHevcAvcStyleLumaIFCoeff8_VNNI[]= {
+    -1, 25,  9, -1, -1, 25,  9, -1, -1, 25,  9, -1, -1, 25,  9, -1, 
+    -1, 25,  9, -1, -1, 25,  9, -1, -1, 25,  9, -1, -1, 25,  9, -1,
+    -2, 18, 18, -2, -2, 18, 18, -2, -2, 18, 18, -2, -2, 18, 18, -2, 
+    -2, 18, 18, -2, -2, 18, 18, -2, -2, 18, 18, -2, -2, 18, 18, -2, 
+    -1,  9, 25, -1, -1,  9, 25, -1, -1,  9, 25, -1, -1,  9, 25, -1, 
+    -1,  9, 25, -1, -1,  9, 25, -1, -1,  9, 25, -1, -1,  9, 25, -1, 
 };
 
 
@@ -117,16 +127,58 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
     fracPos <<= 5;
     refPic -= srcStride;
     IFOffset = _mm_set1_epi16(0x0010);
+    __m512i IFOffset_512    = _mm512_set1_epi16(0x0010);
+    __m256i IFOffset_256    = _mm256_broadcast_i32x4(IFOffset);
+    width_cnt = puWidth;
+
+//AVX 512
+#ifndef VNNI_SUPPORT
+
     IFCoeff_1_0 = _mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_SSSE3 + fracPos - 32));
     IFCoeff_3_2 = _mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_SSSE3 + fracPos - 16));
-    if (!(puWidth & 15)) { //16x
 
-        __m128i sum_lo, sum_hi, ref0, refs, ref2s, ref3s;
+    __m512i IFCoeff_1_0_512 = _mm512_broadcast_i32x4(IFCoeff_1_0);
+    __m512i IFCoeff_3_2_512 = _mm512_broadcast_i32x4(IFCoeff_3_2);
 
-        for (width_cnt = 0; width_cnt < puWidth; width_cnt += 16) {
-
+    do{
+        if (puWidth & 64) { //64x
             refPicTemp = refPic;
             dstTemp = dst;
+            __m512i sum_lo_512, sum_hi_512, ref0_512, refs_512, ref2s_512, ref3s_512, sum_clip_U8_512, ref0_1_lo, ref2_3_lo, ref0_1_hi, ref2_3_hi;
+
+            for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {                
+                ref0_512 = _mm512_loadu_si512((__m512i *)(refPicTemp));
+                refs_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + srcStride));
+                ref2s_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + 2 * srcStride));
+                ref3s_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + 3 * srcStride));
+
+                ref0_1_lo = _mm512_unpacklo_epi8(ref0_512, refs_512);
+                ref2_3_lo = _mm512_unpacklo_epi8(ref2s_512, ref3s_512);
+                ref0_1_hi = _mm512_unpackhi_epi8(ref0_512, refs_512);
+                ref2_3_hi = _mm512_unpackhi_epi8(ref2s_512, ref3s_512);
+
+                sum_lo_512 = _mm512_add_epi16(_mm512_maddubs_epi16(ref0_1_lo,IFCoeff_1_0_512),
+                                        _mm512_maddubs_epi16(ref2_3_lo, IFCoeff_3_2_512));
+
+                sum_hi_512 = _mm512_add_epi16(_mm512_maddubs_epi16(ref0_1_hi,IFCoeff_1_0_512),
+                                        _mm512_maddubs_epi16(ref2_3_hi, IFCoeff_3_2_512));
+
+                sum_lo_512 = _mm512_srai_epi16(_mm512_add_epi16(sum_lo_512, IFOffset_512), IFShift);
+                sum_hi_512 = _mm512_srai_epi16(_mm512_add_epi16(sum_hi_512, IFOffset_512), IFShift);
+                sum_clip_U8_512 = _mm512_packus_epi16(sum_lo_512, sum_hi_512);
+                _mm512_storeu_si512((__m512i *)(dstTemp), sum_clip_U8_512);
+
+                dstTemp += dstStride;
+                refPicTemp += srcStrideSkip;
+            }
+            width_cnt -= 64;
+            refPic += 64;
+            dst += 64;
+        }
+        if (puWidth & 16) { //16x
+            refPicTemp = refPic;
+            dstTemp = dst;
+            __m128i sum_lo, sum_hi, ref0, refs, ref2s, ref3s;
 
             for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
                 ref0 = _mm_loadu_si128((__m128i *)(refPicTemp));
@@ -144,20 +196,18 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
                 sum_hi = _mm_srai_epi16(_mm_add_epi16(sum_hi, IFOffset), IFShift);
                 sum_clip_U8 = _mm_packus_epi16(sum_lo, sum_hi);
                 _mm_storeu_si128((__m128i *)(dstTemp), sum_clip_U8);
+
                 dstTemp += dstStride;
                 refPicTemp += srcStrideSkip;
             }
+            width_cnt -= 16;
             refPic += 16;
             dst += 16;
         }
-    }
-    else { //8x
-        __m128i sum, sum01, sum23;
-
-        for (width_cnt = 0; width_cnt < puWidth; width_cnt += 8) {
-
+        if(puWidth & 8){
             refPicTemp = refPic;
             dstTemp = dst;
+            __m128i sum, sum01, sum23;
 
             for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
                 sum01 = _mm_maddubs_epi16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i *)(refPicTemp)),
@@ -173,8 +223,132 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
                 dstTemp += dstStride;
                 refPicTemp += srcStrideSkip;
             }
+            width_cnt -= 8;
             refPic += 8;
             dst += 8;
         }
-    }
+    }while(width_cnt > 0);
+
+    dstTemp += dstStride;
+    refPicTemp += srcStrideSkip;
+
+//VNNI
+#else
+    IFCoeff_1_0 = _mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_VNNI + fracPos - 32));
+    IFCoeff_3_2 = _mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_VNNI + fracPos - 16));
+
+    __m512i IFCoeff_1_0_512 = _mm512_broadcast_i32x4(IFCoeff_1_0);
+    __m512i IFCoeff_3_2_512 = _mm512_broadcast_i32x4(IFCoeff_3_2);
+    __m512i zero = _mm512_set1_epi32(0);
+
+    __m512i sum_lo_512, sum_hi_512, ref0_512, refs_512, ref2s_512, ref3s_512, sum_clip_U8_512, ref0_1_lo, ref2_3_lo, ref0_1_hi, ref2_3_hi, sum_lo_0, sum_lo_1, sum_hi_0, sum_hi_1;
+    __m256i sum_clip_U8_256;
+    do{
+        if (puWidth & 64) { //64x
+            refPicTemp = refPic;
+            dstTemp = dst;
+            
+            for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
+                ref0_512 = _mm512_loadu_si512((__m512i *)(refPicTemp));
+                refs_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + srcStride));
+                ref2s_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + 2 * srcStride));
+                ref3s_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + 3 * srcStride));
+
+                ref0_512 = _mm512_permutexvar_epi32(_mm512_set_epi32(15,11,7,3,14,10,6,2,13,9,5,1,12,8,4,0),ref0_512);
+                refs_512 = _mm512_permutexvar_epi32(_mm512_set_epi32(15,11,7,3,14,10,6,2,13,9,5,1,12,8,4,0),refs_512);
+                ref2s_512 = _mm512_permutexvar_epi32(_mm512_set_epi32(15,11,7,3,14,10,6,2,13,9,5,1,12,8,4,0),ref2s_512);
+                ref3s_512 = _mm512_permutexvar_epi32(_mm512_set_epi32(15,11,7,3,14,10,6,2,13,9,5,1,12,8,4,0),ref3s_512);
+
+                ref0_1_lo = _mm512_unpacklo_epi8(ref0_512, refs_512);
+                ref2_3_lo = _mm512_unpacklo_epi8(ref2s_512, ref3s_512);
+                ref0_1_hi = _mm512_unpackhi_epi8(ref0_512, refs_512);
+                ref2_3_hi = _mm512_unpackhi_epi8(ref2s_512, ref3s_512);
+
+                sum_lo_0 =  _mm512_dpbusd_epi32(zero, _mm512_unpacklo_epi16(ref0_1_lo, ref2_3_lo), IFCoeff_1_0_512);
+                sum_lo_1 =  _mm512_dpbusd_epi32(zero, _mm512_unpackhi_epi16(ref0_1_lo, ref2_3_lo), IFCoeff_1_0_512);
+                sum_hi_0 =  _mm512_dpbusd_epi32(zero, _mm512_unpacklo_epi16(ref0_1_hi, ref2_3_hi), IFCoeff_1_0_512);
+                sum_hi_1 =  _mm512_dpbusd_epi32(zero, _mm512_unpackhi_epi16(ref0_1_hi, ref2_3_hi), IFCoeff_1_0_512);
+
+                sum_lo_0 = _mm512_castsi256_si512(_mm512_cvtusepi32_epi16(sum_lo_0));
+                sum_lo_0 = _mm512_inserti64x4(sum_lo_0, _mm512_cvtusepi32_epi16(sum_lo_1), 1);
+                sum_hi_0 = _mm512_castsi256_si512(_mm512_cvtusepi32_epi16(sum_hi_0));
+                sum_hi_0 = _mm512_inserti64x4(sum_hi_0, _mm512_cvtusepi32_epi16(sum_hi_1), 1);
+
+                sum_lo_512 = _mm512_srai_epi16(_mm512_add_epi16(sum_lo_512, IFOffset_512), IFShift);
+                sum_hi_512 = _mm512_srai_epi16(_mm512_add_epi16(sum_hi_512, IFOffset_512), IFShift);
+
+                sum_clip_U8_512 = _mm512_castsi256_si512(_mm512_cvtusepi16_epi8(sum_lo_0));
+                sum_clip_U8_512 = _mm512_inserti64x4(sum_clip_U8_512, _mm512_cvtusepi16_epi8(sum_hi_0), 1);
+
+                sum_clip_U8_512 = _mm512_packus_epi16(sum_lo_512, sum_hi_512);
+                _mm512_storeu_si512((__m512i *)(dstTemp), sum_clip_U8_512);
+
+                dstTemp += dstStride;
+                refPicTemp += srcStrideSkip;
+            }
+            width_cnt -= 64;
+            refPic += 64;
+            dst += 64;
+        }
+        if (puWidth & 16) { //16x
+            refPicTemp = refPic;
+            dstTemp = dst;
+
+            for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
+                ref0_512 = _mm512_castsi128_si512(_mm_loadu_si128((__m128i *)(refPicTemp)));
+                refs_512 = _mm512_castsi128_si512(_mm_loadu_si128((__m128i *)(refPicTemp) + srcStride));
+                ref0_512 = _mm512_inserti64x2(ref0_512,_mm_loadu_si128((__m128i *)(refPicTemp + 2 * srcStride)),2);
+                refs_512 = _mm512_inserti64x2(refs_512,_mm_loadu_si128((__m128i *)(refPicTemp + 3 * srcStride)),2);
+                
+                ref0_512 = _mm512_permutexvar_epi32(_mm512_set_epi32(15,11,7,3,14,10,6,2,13,9,5,1,12,8,4,0), ref0_512);
+                refs_512 = _mm512_permutexvar_epi32(_mm512_set_epi32(15,11,7,3,14,10,6,2,13,9,5,1,12,8,4,0), refs_512);
+
+                ref0_1_lo = _mm512_unpacklo_epi8(ref0_512, refs_512);
+                ref2_3_hi = _mm512_unpackhi_epi8(ref0_512, refs_512);
+
+                sum_lo_0 =  _mm512_dpbusd_epi32(zero, _mm512_unpacklo_epi16(ref0_1_lo, ref2_3_hi), IFCoeff_1_0_512);
+
+                sum_clip_U8_256 = _mm512_cvtusepi32_epi16(sum_lo_0);
+                sum_clip_U8_256 = _mm256_srai_epi16(_mm256_add_epi16(sum_clip_U8_256, IFOffset_256), IFShift);
+
+                sum_clip_U8 = _mm256_cvtusepi16_epi8(sum_clip_U8_256);
+                _mm_storeu_si128((__m128i *)(dstTemp), sum_clip_U8);
+
+                dstTemp += dstStride;
+                refPicTemp += srcStrideSkip;
+            }
+            width_cnt -= 16;
+            refPic += 16;
+            dst += 16;
+        }
+        if(puWidth & 8){
+            refPicTemp = refPic;
+            dstTemp = dst;
+            __m128i sum, sum01, sum23;
+
+            for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
+                sum01 = _mm_maddubs_epi16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i *)(refPicTemp)),
+                                                            _mm_loadl_epi64((__m128i *)(refPicTemp + srcStride))), IFCoeff_1_0);
+
+                sum23 = _mm_maddubs_epi16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i *)(refPicTemp + 2 * srcStride)),
+                                                            _mm_loadl_epi64((__m128i *)(refPicTemp + 3 * srcStride))), IFCoeff_3_2);
+
+                sum = _mm_srai_epi16(_mm_add_epi16(_mm_add_epi16(sum01, sum23), IFOffset), IFShift);
+                sum_clip_U8 = _mm_packus_epi16(sum, sum);
+                _mm_storel_epi64((__m128i *)(dstTemp), sum_clip_U8);
+
+                dstTemp += dstStride;
+                refPicTemp += srcStrideSkip;
+            }
+            width_cnt -= 8;
+            refPic += 8;
+            dst += 8;
+        }
+    }while(width_cnt > 0);
+
+    dstTemp += dstStride;
+    refPicTemp += srcStrideSkip;
+
+
+#endif
 }
