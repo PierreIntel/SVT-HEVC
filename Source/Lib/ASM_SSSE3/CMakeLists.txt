@@ -17,7 +17,11 @@ include_directories(${PROJECT_SOURCE_DIR}/Source/API/
 set(flags_to_test
     -mssse3
     -msse4.1
-    -static-intel)
+    -static-intel
+    -mavx512bw
+    -mavx512vnni
+    -mavx512vl   
+    -static-intel )
 
 foreach(cflag ${flags_to_test})
     string(REGEX REPLACE "[^A-Za-z0-9]" "_" cflag_var "${cflag}")

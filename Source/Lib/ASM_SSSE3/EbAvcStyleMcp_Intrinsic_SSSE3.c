@@ -9,6 +9,8 @@
 
 #include "emmintrin.h"
 #include "tmmintrin.h"
+#include "avx512bwintrin.h"
+#include "avx512fintrin.h"
 
 
 EB_EXTERN EB_ALIGN(16) const EB_S8 EbHevcAvcStyleLumaIFCoeff8_SSSE3[]= {
@@ -119,14 +121,52 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
     IFOffset = _mm_set1_epi16(0x0010);
     IFCoeff_1_0 = _mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_SSSE3 + fracPos - 32));
     IFCoeff_3_2 = _mm_load_si128((__m128i *)(EbHevcAvcStyleLumaIFCoeff8_SSSE3 + fracPos - 16));
-    if (!(puWidth & 15)) { //16x
 
-        __m128i sum_lo, sum_hi, ref0, refs, ref2s, ref3s;
+    __m512i IFCoeff_1_0_512 = _mm512_broadcast_i32x4(IFCoeff_1_0);
+    __m512i IFCoeff_3_2_512 = _mm512_broadcast_i32x4(IFCoeff_3_2);
+    __m512i IFOffset_512    = _mm512_set1_epi16(0x0010);
+    width_cnt = puWidth;
 
-        for (width_cnt = 0; width_cnt < puWidth; width_cnt += 16) {
-
+    do{
+        if (puWidth & 64) { //64x
             refPicTemp = refPic;
             dstTemp = dst;
+            for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
+                __m512i sum_lo_512, sum_hi_512, ref0_512, refs_512, ref2s_512, ref3s_512, sum_clip_U8_512, ref0_1_lo, ref2_3_lo, ref0_1_hi, ref2_3_hi;
+                
+                ref0_512 = _mm512_loadu_si512((__m512i *)(refPicTemp));
+
+                refs_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + srcStride));
+                ref2s_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + 2 * srcStride));
+                ref3s_512 = _mm512_loadu_si512((__m512i *)(refPicTemp + 3 * srcStride));
+
+                ref0_1_lo = _mm512_unpacklo_epi8(ref0_512, refs_512);
+                ref2_3_lo = _mm512_unpacklo_epi8(ref2s_512, ref3s_512);
+                ref0_1_hi = _mm512_unpackhi_epi8(ref0_512, refs_512);
+                ref2_3_hi = _mm512_unpackhi_epi8(ref2s_512, ref3s_512);
+
+                sum_lo_512 = _mm512_add_epi16(_mm512_maddubs_epi16(ref0_1_lo,IFCoeff_1_0_512),
+                                        _mm512_maddubs_epi16(ref2_3_lo, IFCoeff_3_2_512));
+
+                sum_hi_512 = _mm512_add_epi16(_mm512_maddubs_epi16(ref0_1_hi,IFCoeff_1_0_512),
+                                        _mm512_maddubs_epi16(ref2_3_hi, IFCoeff_3_2_512));
+
+                sum_lo_512 = _mm512_srai_epi16(_mm512_add_epi16(sum_lo_512, IFOffset_512), IFShift);
+                sum_hi_512 = _mm512_srai_epi16(_mm512_add_epi16(sum_hi_512, IFOffset_512), IFShift);
+                sum_clip_U8_512 = _mm512_packus_epi16(sum_lo_512, sum_hi_512);
+                _mm512_storeu_si512((__m512i *)(dstTemp), sum_clip_U8_512);
+
+                dstTemp += dstStride;
+                refPicTemp += srcStrideSkip;
+            }
+            width_cnt -= 64;
+            refPic += 64;
+            dst += 64;
+        }
+        if (puWidth & 16) { //16x
+            refPicTemp = refPic;
+            dstTemp = dst;
+            __m128i sum_lo, sum_hi, ref0, refs, ref2s, ref3s;
 
             for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
                 ref0 = _mm_loadu_si128((__m128i *)(refPicTemp));
@@ -144,20 +184,18 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
                 sum_hi = _mm_srai_epi16(_mm_add_epi16(sum_hi, IFOffset), IFShift);
                 sum_clip_U8 = _mm_packus_epi16(sum_lo, sum_hi);
                 _mm_storeu_si128((__m128i *)(dstTemp), sum_clip_U8);
+
                 dstTemp += dstStride;
                 refPicTemp += srcStrideSkip;
             }
+            width_cnt -= 16;
             refPic += 16;
             dst += 16;
         }
-    }
-    else { //8x
-        __m128i sum, sum01, sum23;
-
-        for (width_cnt = 0; width_cnt < puWidth; width_cnt += 8) {
-
+        if(puWidth & 8){
             refPicTemp = refPic;
             dstTemp = dst;
+            __m128i sum, sum01, sum23;
 
             for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
                 sum01 = _mm_maddubs_epi16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i *)(refPicTemp)),
@@ -173,8 +211,13 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
                 dstTemp += dstStride;
                 refPicTemp += srcStrideSkip;
             }
+            width_cnt -= 8;
             refPic += 8;
             dst += 8;
         }
-    }
+    }while(width_cnt > 0);
+
+    dstTemp += dstStride;
+    refPicTemp += srcStrideSkip;
+
 }
