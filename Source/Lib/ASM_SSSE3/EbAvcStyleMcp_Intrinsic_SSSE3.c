@@ -21,7 +21,7 @@ EB_EXTERN EB_ALIGN(16) const EB_S8 EbHevcAvcStyleLumaIFCoeff8_SSSE3[]= {
     25, -1, 25, -1, 25, -1, 25, -1, 25, -1, 25, -1, 25, -1, 25, -1
 };
 
-const __uint8_t EbHevcAvcStyleLumaIFCoeff8_VNNI[]= {
+const __int8_t EbHevcAvcStyleLumaIFCoeff8_VNNI[]= {
     -1, 25,  9, -1, -1, 25,  9, -1, -1, 25,  9, -1, -1, 25,  9, -1, 
     -1, 25,  9, -1, -1, 25,  9, -1, -1, 25,  9, -1, -1, 25,  9, -1,
     -2, 18, 18, -2, -2, 18, 18, -2, -2, 18, 18, -2, -2, 18, 18, -2, 

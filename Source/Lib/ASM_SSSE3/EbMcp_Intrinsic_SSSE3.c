@@ -7,6 +7,8 @@
 #include "EbMcp_SSSE3.h"
 #include "EbDefinitions.h"
 
+#include "stdio.h"
+
 #include "emmintrin.h"
 
 #ifndef PREFETCH
@@ -1227,7 +1229,6 @@ void ChromaInterpolationFilterOneDVertical_SSSE3(
   refPic -= srcStride;
   PrefetchBlock(refPic, srcStride, puWidth, puHeight+3);
 
-
   c0 = _mm_loadl_epi64((__m128i *)EbHevcChromaFilterCoeff[fracPosy]);
   c0 = _mm_packs_epi16(c0, c0);
   c0 = _mm_unpacklo_epi16(c0, c0);
@@ -1319,6 +1320,152 @@ void ChromaInterpolationFilterOneDVertical_SSSE3(
     dst += 4;
   }
 
+#ifndef NON_AVX512_SUPPORT
+  // AVX512
+  __m128i a4, a5, a6, a7, a8, a9, a10;
+  __m512i d0, d1, d2, d3, sum1, sum2, c0_512, c2_512;
+  c0_512 = _mm512_broadcast_i32x4(c0);
+  c2_512 = _mm512_broadcast_i32x4(c2);
+
+  rowCount = puWidth;
+
+  if(rowCount & 8){
+    sum1 = sum2 =  _mm512_set1_epi16(32);
+    ptr = refPic;
+    qtr = dst;
+    
+    a0 = _mm_mask_loadu_epi64(a0, 0x01, (__m128i *)ptr); ptr += srcStride;// 1st
+    a1 = _mm_mask_loadu_epi64(a1, 0xF, (__m128i *)ptr); ptr += srcStride;// 2d
+    a2 = _mm_mask_loadu_epi64(a2, 0xF, (__m128i *)ptr); ptr += srcStride;// 3d
+    a3 = _mm_mask_loadu_epi64(a3, 0xF, (__m128i *)ptr); ptr += srcStride;// 4th
+    a4 = _mm_mask_loadu_epi64(a4, 0xF, (__m128i *)ptr); ptr += srcStride;// 5th
+    a5 = _mm_mask_loadu_epi64(a5, 0xF, (__m128i *)ptr); ptr += srcStride;// 6th
+    a6 = _mm_mask_loadu_epi64(a6, 0xF, (__m128i *)ptr); ptr += srcStride;// 7th
+    a7 = _mm_mask_loadu_epi64(a7, 0xF, (__m128i *)ptr); ptr += srcStride;// 8th
+    a8 = _mm_mask_loadu_epi64(a8, 0xF, (__m128i *)ptr); ptr += srcStride;// 9th
+    a9 = _mm_mask_loadu_epi64(a9, 0xF, (__m128i *)ptr); ptr += srcStride;// 10th
+    a10 = _mm_mask_loadu_epi64(a10, 0xF, (__m128i *)ptr); ptr += srcStride;// 11th    
+
+    //Need 0,2,2,4,4,6,6,8 in one 512
+    d0 = _mm512_set_epi64(a8[0], a6[0], a6[0], a4[0], a4[0], a2[0], a2[0], a0[0]); 
+    //Need 1,3,3,5,5,7,7,9 in one 512
+    d1 = _mm512_set_epi64(a9[0], a7[0], a7[0], a5[0], a5[0], a3[0], a3[0], a1[0]);
+    //Need 2,4,4,6,6,8,8,10 in one 512
+    d2 = _mm512_set_epi64(a10[0], a8[0], a8[0], a6[0], a6[0], a4[0], a4[0], a2[0]);
+
+    sum1 = _mm512_add_epi16(sum1, _mm512_maddubs_epi16(_mm512_unpacklo_epi8(d0,d1), c0_512));
+    sum1 = _mm512_add_epi16(sum1, _mm512_maddubs_epi16(_mm512_unpackhi_epi8(d0,d1), c2_512));
+
+    sum2 = _mm512_add_epi16(sum2, _mm512_maddubs_epi16(_mm512_unpacklo_epi8(d1,d2), c0_512));
+    sum2 = _mm512_add_epi16(sum2, _mm512_maddubs_epi16(_mm512_unpackhi_epi8(d1,d2), c2_512));
+
+    sum1 = _mm512_srai_epi16(sum1, 6);
+    sum2 = _mm512_srai_epi16(sum2, 6);
+    sum1 = _mm512_packus_epi16(sum1, sum2);
+
+    _mm512_mask_storeu_epi8((__m512i *)qtr, 0xFFFFFFFFFFFF, sum1);
+    
+    return;
+  }
+
+  else if(rowCount & 16){
+    colCount = puWidth;
+    do
+    {
+      rowCount = puHeight;
+      ptr = refPic;
+      qtr = dst;
+      a0 = _mm_mask_loadu_epi64(a0, 0x0F, (__m128i *)ptr); ptr += srcStride;
+      a1 = _mm_mask_loadu_epi64(a1, 0x0F, (__m128i *)ptr); ptr += srcStride;
+      a2 = _mm_mask_loadu_epi64(a2, 0x0F, (__m128i *)ptr); ptr += srcStride;
+
+      do{
+        
+        sum1 = sum2 = _mm512_set1_epi16(32);
+        a3 = _mm_mask_loadu_epi64(a3, 0x0F, (__m128i *)ptr); ptr += srcStride;
+        a4 = _mm_mask_loadu_epi64(a4, 0x0F, (__m128i *)ptr); ptr += srcStride;
+        a5 = _mm_mask_loadu_epi64(a5, 0x0F, (__m128i *)ptr); ptr += srcStride;
+        a6 = _mm_mask_loadu_epi64(a6, 0x0F, (__m128i *)ptr); ptr += srcStride;
+        // Need 00,20,10,30,20,40,30,50 in one 512
+        d0 = _mm512_set_epi64(a5[0], a3[0], a4[0], a2[0], a3[0], a1[0], a2[0], a0[0]);
+        // Need 10,30,20,40,30,50,40,60
+        d1 = _mm512_set_epi64(a6[0], a4[0], a5[0], a3[0], a4[0], a2[0], a3[0], a1[0]);
+        // Need 01,21,11,31,21,41,31,51
+        d2 = _mm512_set_epi64(a5[1], a3[1], a4[1], a2[1], a3[1], a1[1], a2[1], a0[1]);
+        // Need 11,31,21,41,31,51,41,61
+        d3 = _mm512_set_epi64(a6[1], a4[1], a5[1], a3[1], a4[1], a2[1], a3[1], a1[1]);
+
+        sum1 = _mm512_add_epi16(sum1, _mm512_maddubs_epi16(_mm512_unpacklo_epi8(d0,d1), c0_512));
+        sum1 = _mm512_add_epi16(sum1, _mm512_maddubs_epi16(_mm512_unpackhi_epi8(d0,d1), c2_512));
+        sum2 = _mm512_add_epi16(sum2, _mm512_maddubs_epi16(_mm512_unpacklo_epi8(d2,d3), c0_512));
+        sum2 = _mm512_add_epi16(sum2, _mm512_maddubs_epi16(_mm512_unpackhi_epi8(d2,d3), c2_512));
+
+        sum1 = _mm512_srai_epi16(sum1, 6);
+        sum2 = _mm512_srai_epi16(sum2, 6);
+        sum1 = _mm512_packus_epi16(sum1, sum2);
+        _mm512_mask_storeu_epi8((__m512i *) qtr, 0xFFFFFFFFFFFF,sum1); qtr += dstStride;
+
+        a0 = a4; a1 = a5; a2 = a6;
+
+        rowCount -= 4;
+      }while (rowCount > 0);
+      refPic += 16;
+      dst += 16;
+      colCount -= 16;
+    }
+    while (colCount > 0);
+    
+    return;
+  }
+
+  else if(puWidth & 32){
+  __m256i x0, x1, x2, x3, x4;
+    colCount = puWidth;
+    do
+    {
+      rowCount = puHeight;
+      ptr = refPic;
+      qtr = dst;
+      x0 = _mm256_mask_loadu_epi64(x0, 0x0F, (__m256i *)ptr); ptr += srcStride; //0
+      x1 = _mm256_mask_loadu_epi64(x1 ,0x0F, (__m256i *)ptr); ptr += srcStride; //1
+
+      do{
+        sum1 = sum2 = _mm512_set1_epi16(32);
+        x2 = _mm256_mask_loadu_epi64(x2, 0x0F, (__m256i *)ptr); ptr += srcStride; //2
+        x3 = _mm256_mask_loadu_epi64(x3, 0x0F, (__m256i *)ptr); ptr += srcStride; //3
+        x4 = _mm256_mask_loadu_epi64(x4, 0x0F, (__m256i *)ptr); ptr += srcStride; //4
+        
+        d0 = _mm512_set_epi64(x3[2], x1[2], x3[0], x1[0], x2[2], x0[2], x2[0], x0[0]);
+        d1 = _mm512_set_epi64(x4[2], x2[2], x4[0], x2[0], x3[2], x1[2], x3[0], x1[0]);
+        d2 = _mm512_set_epi64(x3[3], x1[3], x3[1], x1[1], x2[3], x0[3], x2[1], x0[1]);
+        d3 = _mm512_set_epi64(x4[3], x2[3], x4[1], x2[1], x3[3], x1[3], x3[1], x1[1]);
+
+        sum1 = _mm512_add_epi16(sum1, _mm512_maddubs_epi16(_mm512_unpacklo_epi8(d0,d1), c0_512));
+        sum1 = _mm512_add_epi16(sum1, _mm512_maddubs_epi16(_mm512_unpackhi_epi8(d0,d1), c2_512));
+        sum2 = _mm512_add_epi16(sum2, _mm512_maddubs_epi16(_mm512_unpacklo_epi8(d2,d3), c0_512));
+        sum2 = _mm512_add_epi16(sum2, _mm512_maddubs_epi16(_mm512_unpackhi_epi8(d2,d3), c2_512));
+
+        sum1 = _mm512_srai_epi16(sum1, 6);
+        sum2 = _mm512_srai_epi16(sum2, 6);
+        sum1 = _mm512_packus_epi16(sum1, sum2);
+
+        _mm512_mask_storeu_epi8((__m512i*)qtr, 0xFFFFFFFFFFFF, sum1); qtr += dstStride;
+
+        x0 = x2; x1 = x3; x2 = x4;
+
+        rowCount -= 2;
+      }while (rowCount > 0);
+
+      refPic += 32;
+      dst += 32;
+      colCount -= 32;
+
+    }while (colCount > 0);
+
+  return;
+  }
+
+#else
   colCount = puWidth;
   do
   {
@@ -1354,6 +1501,7 @@ void ChromaInterpolationFilterOneDVertical_SSSE3(
     colCount -= 8;
   }
   while (colCount > 0);
+#endif
 }
 
 
