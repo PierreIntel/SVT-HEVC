@@ -128,7 +128,7 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
     width_cnt = puWidth;
 
     do{
-        if (puWidth & 64) { //64x
+        if (width_cnt & 64) { //64x
             refPicTemp = refPic;
             dstTemp = dst;
             for (height_cnt = 0; height_cnt < puHeight; ++height_cnt) {
@@ -163,7 +163,7 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
             refPic += 64;
             dst += 64;
         }
-        if (puWidth & 16) { //16x
+        if (width_cnt & 16) { //16x
             refPicTemp = refPic;
             dstTemp = dst;
             __m128i sum_lo, sum_hi, ref0, refs, ref2s, ref3s;
@@ -192,7 +192,7 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
             refPic += 16;
             dst += 16;
         }
-        if(puWidth & 8){
+        if(width_cnt & 8){
             refPicTemp = refPic;
             dstTemp = dst;
             __m128i sum, sum01, sum23;
@@ -216,6 +216,53 @@ void AvcStyleLumaInterpolationFilterVertical_SSSE3_INTRIN(
             dst += 8;
         }
     }while(width_cnt > 0);
+    /*
+   
+   if (!(puWidth & 15)) { // 16x
+        __m128i ref0, ref1, ref2, ref3, ref01_lo, ref01_hi, ref23_lo, ref23_hi, sum_lo, sum_hi;
+
+        for (height_cnt = 0; height_cnt < puHeight; ++height_cnt){
+            for (width_cnt = 0; width_cnt < puWidth; width_cnt += 16) {
+                ref0 = _mm_loadu_si128((__m128i *)(refPic + width_cnt - 1));
+                ref1 = _mm_loadu_si128((__m128i *)(refPic + width_cnt));
+                ref2 = _mm_loadu_si128((__m128i *)(refPic + width_cnt + 1));
+                ref3 = _mm_loadu_si128((__m128i *)(refPic + width_cnt + 2));
+
+                ref01_lo = _mm_unpacklo_epi8(ref0, ref1);
+                ref01_hi = _mm_unpackhi_epi8(ref0, ref1);
+                ref23_lo = _mm_unpacklo_epi8(ref2, ref3);
+                ref23_hi = _mm_unpackhi_epi8(ref2, ref3);
+
+                sum_lo = _mm_srai_epi16(_mm_add_epi16(_mm_add_epi16(_mm_maddubs_epi16(ref01_lo, IFCoeff_1_0), _mm_maddubs_epi16(ref23_lo, IFCoeff_3_2)), IFOffset), IFShift);
+                sum_hi = _mm_srai_epi16(_mm_add_epi16(_mm_add_epi16(_mm_maddubs_epi16(ref01_hi, IFCoeff_1_0), _mm_maddubs_epi16(ref23_hi, IFCoeff_3_2)), IFOffset), IFShift);
+                sum_clip_U8 = _mm_packus_epi16(sum_lo, sum_hi);
+                _mm_storeu_si128((__m128i *)(dst + width_cnt), sum_clip_U8);
+            }
+            refPic += srcStride;
+            dst += dstStride;
+        }
+    }
+    else { //8x
+        __m128i  sum01, sum23, sum;
+
+        for (height_cnt = 0; height_cnt < puHeight; ++height_cnt){
+            for (width_cnt = 0; width_cnt < puWidth; width_cnt += 8) {
+                sum01 = _mm_maddubs_epi16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i *)(refPic + width_cnt - 1)),
+                                                            _mm_loadl_epi64((__m128i *)(refPic + width_cnt))), IFCoeff_1_0);
+
+                sum23 = _mm_maddubs_epi16(_mm_unpacklo_epi8(_mm_loadl_epi64((__m128i *)(refPic + width_cnt + 1)),
+                                                            _mm_loadl_epi64((__m128i *)(refPic + width_cnt + 2))), IFCoeff_3_2);
+
+                sum = _mm_srai_epi16(_mm_add_epi16(_mm_add_epi16(sum01, sum23), IFOffset), IFShift);
+                sum_clip_U8 = _mm_packus_epi16(sum, sum);
+
+                _mm_storel_epi64((__m128i *)(dst + width_cnt), sum_clip_U8);
+            }
+            refPic += srcStride;
+            dst += dstStride;
+        }
+
+    }*/
 
     dstTemp += dstStride;
     refPicTemp += srcStrideSkip;

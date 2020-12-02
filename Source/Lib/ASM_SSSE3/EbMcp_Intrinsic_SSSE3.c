@@ -1227,7 +1227,8 @@ void ChromaInterpolationFilterOneDVertical_SSSE3(
   refPic -= srcStride;
   PrefetchBlock(refPic, srcStride, puWidth, puHeight+3);
 
-
+  //if(puWidth > 32){ printf("puWidth = %d\n", puWidth); }
+  
   c0 = _mm_loadl_epi64((__m128i *)EbHevcChromaFilterCoeff[fracPosy]);
   c0 = _mm_packs_epi16(c0, c0);
   c0 = _mm_unpacklo_epi16(c0, c0);
@@ -1355,15 +1356,17 @@ void ChromaInterpolationFilterOneDVertical_SSSE3(
     colCount -= 8;
   }
   while (colCount > 0);
-
+/*
 //AVX512
 //#else
   __m128i a4, a5, a6, a7, a8, a9, a10;
   __m512i d0, d1, d2, d3, sum1, sum2, c0_512, c2_512;
   c0_512 = _mm512_broadcast_i32x4(c0);
   c2_512 = _mm512_broadcast_i32x4(c2);
-
+  //printf("W %d\n",puWidth);
   if(puWidth & 8){
+    ptr = refPic;
+    qtr = dst;
     sum1 = sum2 =  _mm512_set1_epi16(32);
     a0 = _mm_loadl_epi64((__m128i *)ptr); ptr += srcStride;// 1st
     a1 = _mm_loadl_epi64((__m128i *)ptr); ptr += srcStride;// 2d
@@ -1376,14 +1379,14 @@ void ChromaInterpolationFilterOneDVertical_SSSE3(
     a8 = _mm_loadl_epi64((__m128i *)ptr); ptr += srcStride;// 9th
     a9 = _mm_loadl_epi64((__m128i *)ptr); ptr += srcStride;// 10th
     a10 = _mm_loadl_epi64((__m128i *)ptr); ptr += srcStride;// 11th
-
+  
     //Need 0,2,2,4,4,6,6,8 in one 512
     d0 = _mm512_set_epi64(a8[0], a6[0], a6[0], a4[0], a4[0], a2[0], a2[0], a0[0]);      
     //Need 1,3,3,5,5,7,7,9 in one 512
     d1 = _mm512_set_epi64(a9[0], a7[0], a7[0], a5[0], a5[0], a3[0], a3[0], a1[0]);
     //Need 2,4,4,6,6,8,8,10 in one 512
     d2 = _mm512_set_epi64(a10[0], a8[0], a8[0], a6[0], a6[0], a4[0], a4[0], a2[0]);
-
+  
     sum1 = _mm512_add_epi16(sum1, _mm512_maddubs_epi16(_mm512_unpacklo_epi8(d0,d1), c0_512));
     sum1 = _mm512_add_epi16(sum1, _mm512_maddubs_epi16(_mm512_unpackhi_epi8(d0,d1), c2_512));
 
@@ -1393,8 +1396,7 @@ void ChromaInterpolationFilterOneDVertical_SSSE3(
     sum1 = _mm512_srai_epi16(sum1, 6);
     sum2 = _mm512_srai_epi16(sum2, 6);
     sum1 = _mm512_packus_epi16(sum1, sum2);
-
-    _mm512_store_si512((__m128i *)qtr, sum1);
+    _mm512_storeu_si512((__m512i*)qtr, sum1);
   }
   else if(puWidth & 16){
     colCount = puWidth;
@@ -1435,7 +1437,7 @@ void ChromaInterpolationFilterOneDVertical_SSSE3(
         sum1 = _mm512_srai_epi16(sum1, 6);
         sum2 = _mm512_srai_epi16(sum2, 6);
         sum1 = _mm512_packus_epi16(sum1, sum2);
-        _mm512_store_si512((__m512i *) qtr, sum1);
+        _mm512_storeu_si512((__m512i *) qtr, sum1);
 
         a0 = a4; a1 = a5; a2 = a6;
 
@@ -1448,8 +1450,9 @@ void ChromaInterpolationFilterOneDVertical_SSSE3(
     while (colCount > 0);
   }
 
-  else if(puWidth & 32){
-  __m256i x0, x1, x2, x3, x4;
+  //else if(puWidth & 32){
+  else{
+    __m256i x0, x1, x2, x3, x4;
     colCount = puWidth;
     do
     {
@@ -1488,7 +1491,7 @@ void ChromaInterpolationFilterOneDVertical_SSSE3(
         sum2 = _mm512_srai_epi16(sum2, 6);
         sum1 = _mm512_packus_epi16(sum1, sum2);
 
-        _mm512_store_si512(sum1, dst);
+        _mm512_storeu_si512(dst, sum1);
 
         x0 = x2; x1 = x3; x2 = x4;
 
@@ -1501,7 +1504,7 @@ void ChromaInterpolationFilterOneDVertical_SSSE3(
       
     }while (colCount > 0);
   }
-
+*/
 //#endif
 }
 

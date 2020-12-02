@@ -1,0 +1,9 @@
+prefix=/usr/local
+includedir=/usr/local/include/svt-hevc
+libdir=/usr/local/lib
+
+Name: SvtHevcEnc
+Description: SVT (Scalable Video Technology) for HEVC encoder library
+Version: 1.4.3
+Libs: -L${libdir} -lSvtHevcEnc -lpthread
+Cflags: -I${includedir}
